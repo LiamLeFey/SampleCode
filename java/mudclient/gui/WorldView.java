@@ -4,8 +4,6 @@ import java.util.*;
 import java.awt.*;
 import javax.swing.*;
 import javax.swing.text.Segment;
-import java.text.AttributedCharacterIterator.Attribute;
-import java.awt.font.TextAttribute;
 import mudclient.core.*;
 
 /** This encapsulates the input and output buffers of
@@ -18,15 +16,8 @@ public class WorldView extends JSplitPane{
   // we use a convention here. we terminate the array with null
   // 16 should be plenty, but we check as we grow it just in case...
   private char[] outputPartialAnsi = new char[ 16 ];
-  private Map<Attribute, Object> currentAttributes;
-  private static final Integer MINUS_ONE = new Integer( -1 );
-  public static Map<Attribute, Object> DEFAULT_ATTRIBUTES;
-  private HashMap<char[], Map<Attribute, Object>> attributeCache;
 
-  static{
-    DEFAULT_ATTRIBUTES = new HashMap<Attribute, Object>();
-    DEFAULT_ATTRIBUTES.put( TextAttribute.WEIGHT, TextAttribute.WEIGHT_BOLD );
-  }
+  private static final Integer MINUS_ONE = new Integer( -1 );
 
   public WorldView(){
     super( JSplitPane.VERTICAL_SPLIT, 
@@ -36,54 +27,63 @@ public class WorldView extends JSplitPane{
 
     outputView = (TLBView)getTopComponent();
     inputView = (TLBView)getBottomComponent();
+    outputView.setPreferredLineCount( 23 );
+    inputView.setPreferredLineCount( 5 );
     setResizeWeight( 0.8f );
     setDividerSize( 3 );
-    attributeCache = new HashMap<char[], Map<Attribute, Object>>();
-    currentAttributes = DEFAULT_ATTRIBUTES;
   }
   public void display( Segment s ){
-for( int ii = s.offset; ii < s.offset + s.count; ii++ )
-if( Character.isISOControl(s.array[ii]) && 
-        s.array[ii] != 0x0D &&  // ignore \r
-        s.array[ii] != 0x0A &&  // ignore \n
-        s.array[ii] != 0x09 ){  // ignore \t
-System.out.printf("got ISO Control character 0x%02X.\n", (s.array[ii] & 0xFF));
-int jj = ii - 2;
-if( jj < s.offset ) jj = s.offset;
+    // we copy the segment, because we chew up the
+    // offset and count, (but don't mess with array data)
+    // and we don't want to screw up the caller.
+    Segment sc = new Segment();
+    sc.array = s.array;
+    sc.offset = s.offset;
+    sc.count = s.count;
+for( int ii = sc.offset; ii < sc.offset + sc.count; ii++ )
+if( Character.isISOControl(sc.array[ii]) && 
+        sc.array[ii] != AnsiCode.CSIA &&  // ignore <esc>
+        sc.array[ii] != 0x0D &&  // ignore \r
+        sc.array[ii] != 0x0A &&  // ignore \n
+        sc.array[ii] != 0x09 ){  // ignore \t
+        if( sc.array[ii] == 0x01 ){ // used to terminate a prompt
+          sc.array[ii] = '\n';  // for now, just replace with newline
+          continue;
+        }
+System.out.printf("got ISO Control character 0x%02X.\n", (sc.array[ii] & 0xFF));
+int jj = ii - 5;
+if( jj < sc.offset ) jj = sc.offset;
 System.out.print("Surrounding characters are: \"");
-for( ; jj < ii + 6 && jj < s.offset + s.count; jj++ ){
-if( Character.isISOControl(s.array[jj]) )
-System.out.printf("0x%02X,", (s.array[jj] & 0xFF) );
+for( ; jj < ii + 12 && jj < sc.offset + sc.count; jj++ ){
+if( Character.isISOControl(sc.array[jj]) )
+System.out.printf("0x%02X,", (sc.array[jj] & 0xFF) );
 else
-System.out.print(s.array[jj] + ",");
+System.out.print(sc.array[jj] + ",");
 }
 System.out.println();
 }
     if( outputPartialAnsi[0] == AnsiCode.CSIA )
-      completeAnsi( s );
-    int end = s.offset + s.count;
-    for( int i = s.offset; i < end; i++ ){
-      if( s.array[i] == AnsiCode.CSIA ){
-        appendToOutput( s.array, s.offset, i - s.offset, currentAttributes );
-        //outputView.getTextLineBuffer().append( s.array, s.offset, i - s.offset );
-        s.count -= i - s.offset;
-        s.offset = i;
-        completeAnsi( s );
+      completeAnsi( sc );
+    int end = sc.offset + sc.count;
+    for( int i = sc.offset; i < end; i++ ){
+      if( sc.array[i] == AnsiCode.CSIA ){
+        appendToOutput( sc.array, sc.offset, i - sc.offset );
+        sc.count -= i - sc.offset;
+        sc.offset = i;
+        completeAnsi( sc );
+        i = sc.offset - 1;
       }
     }
-    appendToOutput( s, currentAttributes );
-    //outputView.getTextLineBuffer().append( s );
+    appendToOutput( sc );
+    //outputView.getTextLineBuffer().append( sc );
   }
-  private void appendToOutput( Segment s, Map<Attribute, Object> textAttributes ){
-    appendToOutput( s.array, s.offset, s.count, textAttributes );
+  private void appendToOutput( Segment s ){
+    appendToOutput( s.array, s.offset, s.count );
   }
   private void appendToOutput( char[] c,
                                int offset,
-                               int length,
-                               Map<Attribute, Object> textAttributes ){
+                               int length ){
     TextLineBuffer output = outputView.getTextLineBuffer();
-    TLBAttributes atts = outputView.getTLBAttributes();
-    atts.setAttributes( textAttributes, -1, -1 );
     output.append( c, offset, length );
   }
   // this reads ansi codes from s, and stores them in outputPartialAnsi
@@ -107,7 +107,8 @@ System.out.println();
 
       char c = outputPartialAnsi[i++] = s.array[s.offset++];
       if( c == AnsiCode.CST ){
-        currentAttributes = getAttributesFromAnsi( outputPartialAnsi, 0, i );
+        outputView.getTextLineBuffer()
+                  .setAnsi( Arrays.copyOf( outputPartialAnsi, i ) );
         outputPartialAnsi[0] = 0;
         break;
       } else if( c != AnsiCode.CSIA && 
@@ -134,6 +135,7 @@ System.out.println();
     return outputView;
   }
 
+  /*
   public void setForeground( Color c ){
     super.setForeground( c );
     try{
@@ -158,10 +160,11 @@ System.out.println();
     super.setFont( f );
     try{
       inputView.setFont( f );
-      outputView.setFont( f );
+      outputView.getTextLineBuffer().setDefaultFont( f );
     } catch( NullPointerException e ){
-      getTopComponent().setFont( f );
+      ((VFTLBView)getTopComponent()).getTextLineBuffer().setDefaultFont( f );
       getBottomComponent().setFont( f );
     }
   }
+  */
 }

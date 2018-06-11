@@ -19,9 +19,14 @@ public class MudClientGui implements UserInterface, ActionListener{
   private JMenuItem fontMenuItem;
   private JMenuItem lineWrapMenuItem;
 
+  private static final String INFO_LABEL = "-info-";
+
   private Color fgColor = AnsiCode.WHITE;
   private Color bgColor = AnsiCode.BLACK;
   private Font font;
+
+  private boolean infoOnCurrent = true;
+  private boolean echoInputToOutput = true;
 
   public MudClientGui(){
 
@@ -67,8 +72,7 @@ public class MudClientGui implements UserInterface, ActionListener{
     contentPane.setLayout(new BorderLayout());
 
     worldViews = new JTabbedPane();
-    worldViews.addTab( null, new WorldView() );
-    worldViews.setTabComponentAt( 0, new JLabel( "-info-" ) );
+    worldViews.addTab( INFO_LABEL, new WorldView() );
 
     contentPane.add( worldViews, BorderLayout.CENTER );
     contentPane.add( inputField, BorderLayout.SOUTH );
@@ -107,6 +111,7 @@ public class MudClientGui implements UserInterface, ActionListener{
     wv.setForeground( fgColor );
     wv.setBackground( bgColor );
     worldViews.addTab( name, wv );
+    switchToConnection( name );
     return name;
   }
   public void switchToConnection( String name ){
@@ -123,7 +128,10 @@ public class MudClientGui implements UserInterface, ActionListener{
     display( s );
   }
   public void display( Segment s ){
-    display( getCurrentConnection(), s );
+    String current = getCurrentConnection();
+    display( INFO_LABEL, s );
+    if( infoOnCurrent && ! INFO_LABEL.equals( current ) )
+      display( current, s );
   }
   public void display( String connection, String str ){
     Segment s = new Segment();
@@ -134,7 +142,9 @@ public class MudClientGui implements UserInterface, ActionListener{
   }
   // workhorse method.  all other display(...) methods call this one.
   public void display( String connection, Segment s ){
-    getWorldView( connection ).display( s );
+    WorldView awv = getWorldView( connection );
+    if( awv != null )
+      getWorldView( connection ).display( s );
   }
   public Color getForeground(){
     return getActiveWorldView().getForeground();
@@ -210,8 +220,13 @@ public class MudClientGui implements UserInterface, ActionListener{
       String input = inputField.getText();
       inputField.setText("");
 
-      getActiveWorldView().logInput( input );
-      getActiveWorldView().logInput( "\n" );
+      WorldView awv = getActiveWorldView();
+      if( echoInputToOutput ){
+        awv.getOutputView().getTextLineBuffer().append( input.toCharArray() );
+        awv.getOutputView().getTextLineBuffer().append( "\n".toCharArray() );
+      }
+      awv.logInput( input );
+      awv.logInput( "\n" );
       MudClient.handleInput( getCurrentConnection(), input );
 
     } else if( ae.getSource() == fontMenuItem ){
@@ -219,9 +234,10 @@ public class MudClientGui implements UserInterface, ActionListener{
       fontSelector.setVisible( true );
     }
   }
+  /*
   public static void main(String[] args) {
     // to do: take some command line arguments and do some customization
     MudClientGui gui = new MudClientGui();
-  }
+  }*/
 }
 

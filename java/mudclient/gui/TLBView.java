@@ -1,6 +1,7 @@
 package mudclient.gui;
 
 import mudclient.core.*;
+import mudclient.core.TextLineBuffer.AnsiRun;
 import java.awt.*;
 import java.awt.event.AdjustmentListener;
 import java.awt.event.AdjustmentEvent;
@@ -8,16 +9,13 @@ import java.util.Map;
 import javax.swing.*;
 import javax.swing.text.Segment;
 
-public class TLBView extends JPanel implements BufferListener, AdjustmentListener{
+public class TLBView extends JPanel 
+                      implements BufferListener, AdjustmentListener{
 
   // we make a string 80 chars wide with each letter in it 
   private String metricString = "ABCDEFGHIJKLMNOPQRSTUVWXYZ12345678901234" +
                                 "abcdefghijklmnopqrstuvwxyz12345678901234";
                                  
-  // font size in points
-  private int fontSize;
-  private Font font;
-  private FontMetrics fontMetrics;
   // the amount of space (in pixels? points?) between lines
   private int lineSpace;
   private int preferredLineCount;
@@ -32,11 +30,15 @@ public class TLBView extends JPanel implements BufferListener, AdjustmentListene
   // this is for the special case where the scrollbar is somewhere in
   // the middle (not at the beginning or the end), and the buffer
   // is moving.  We leave the visible lines visible.
-  private boolean suppressRepaint;
+  //private boolean suppressRepaint;
   // this turns off suppressRepaint functionality.  The viewable
   // area always jumps to any new content from the buffer
-  private boolean alwaysShowNew;
+  private boolean alwaysShowNew = false;
 
+  private int fgColor;
+  private int bgColor;
+
+  private TLBView(){}
   public TLBView( int size ){
     myTlb = new TextLineBuffer( size );
     setDefaults();
@@ -51,11 +53,14 @@ public class TLBView extends JPanel implements BufferListener, AdjustmentListene
   public void setDefaults(){
     // sets the default font, size, and preferredLineCount
     myTlb.addBufferListener( this );
-    fontSize = 10;
-    font = new Font( Font.MONOSPACED, Font.PLAIN, fontSize );
-    fontMetrics = getFontMetrics( font );
+    Font f = new Font( "DejaVu Sans Mono", Font.BOLD, 12 );
+    setFont( f );
     lineSpace = 1;
     preferredLineCount = 23;
+    fgColor = AnsiCode.FG_WHITE;
+    bgColor = AnsiCode.BG_BLACK;
+    setForeground( AnsiCode.getColor( fgColor, false ) );
+    setBackground( AnsiCode.getColor( bgColor, false ) );
     int bufferLines = myTlb.getCurrentLineCount();
     // so we have a problem. the scrollbar goes from the min
     // to the max, not the min to the max+1 like everything
@@ -78,41 +83,32 @@ public class TLBView extends JPanel implements BufferListener, AdjustmentListene
     add( verticalScrollBar, BorderLayout.EAST );
   }
   public void setFontSize( int points ){ 
-    fontSize = points; 
-    font = font.deriveFont( points );
-    fontMetrics = getFontMetrics( font );
-    repaint();
-  }
-  public Font getFont(){
-    return font;
-  }
-  public void setFont( Font f ){
-    font = f;
-    fontMetrics = getFontMetrics( font );
-    repaint();
-  }
-  public void setFont( String fontName ){
-    font = new Font( fontName, Font.PLAIN, fontSize );
-    fontMetrics = getFontMetrics( font );
+    setFont( getFont().deriveFont( (float)points ) );
     repaint();
   }
   public void setPreferredLineCount( int c ){ preferredLineCount = c; }
 
   public Dimension getPreferredSize(){
     // width, height
+    FontMetrics fontMetrics = getFontMetrics( getFont() );
     int height = (fontMetrics.getHeight() + lineSpace) * preferredLineCount;
     int width = fontMetrics.stringWidth( metricString ) +
                 (int)verticalScrollBar.getMinimumSize().getWidth() + 3;
     return new Dimension( width, height );
   }
   public void paintComponent( Graphics g ){
-    if( suppressRepaint ) return;
+    //if( suppressRepaint ) return;
+    setBackground( AnsiCode.getColor( bgColor, false ) );
     super.paintComponent( g );
+    FontMetrics fontMetrics = getFontMetrics( getFont() );
     //we now set this multiple times when drawing....
-    //g.setFont( font );
-    // the "zero" of the lines so the ith line gets put at i*lineHeight+drop
-    int drop = lineSpace + fontMetrics.getAscent();
+    g.setFont( getFont() );
+
+    int ascent = fontMetrics.getAscent();
     int lineHeight = fontMetrics.getHeight() + lineSpace;
+    // the "zero" of the lines so the ith line gets put at i*lineHeight+drop
+    int drop = lineSpace + ascent;
+
     Dimension dT = getSize( new Dimension() );
     Dimension dS = verticalScrollBar.getSize ( new Dimension() );
     int lineCount = ((int)dT.getHeight()) / lineHeight;
@@ -124,10 +120,15 @@ public class TLBView extends JPanel implements BufferListener, AdjustmentListene
     int i, j, k; 
     int baseLine = verticalScrollBar.getValue();
 
-    // the first line not visible
+    // these are used for drawing with differing attributes (colors)
+    int lengthOfAnsiRun, drawnLength, pixelWidthOfRun;
+    AnsiCode currentAnsi, defaultAnsi;
+    defaultAnsi = myTlb.getDefaultAnsi();
+    AnsiRun ar;
+
     Segment s = new Segment();
     if( lineWrap ){
-      // perhaps we should do something more in case people switch to
+      // perhaps we should do more in case people switch to
       // a non monospaced font, but hey...  Maybe later.
 
       // the number of lines of text displayed (buffer lines, not graphics lines)
@@ -172,17 +173,45 @@ public class TLBView extends JPanel implements BufferListener, AdjustmentListene
       int count;
       for( i = 0, count = 0; i < extent && count <= lineCount; i++ ){
         s = myTlb.getLineAsSegment( s, baseLine + i );
+        ar = myTlb.getAnsiRun( baseLine + i );
         // we don't initialize j here, because we're using the value
         // calculated earlier to possibly skip the first part of the
         // first line in the event that we are more interested in showing
         // the last part of the last line, and there isn't room to show 
         // both
         for( ; j < s.count && count <= lineCount; j += lineWidth ){
-          g.drawChars( s.array,
-                       s.offset + j,
-                       (j + lineWidth >= s.count) ? s.count - j : lineWidth,
-                       2,
-                       count*lineHeight + drop );
+          drawnLength = 0;
+          for( k = 0; k < lineWidth; ){
+            while( ar != null &&
+                    ar.getNext() != null &&
+                    ar.getNext().getLineOffset() <= j + k )
+              ar = ar.getNext();
+            if( ar != null ){
+              currentAnsi = (ar.getAnsi() == null) ? defaultAnsi : ar.getAnsi();
+              if( ar.getNext() != null &&
+                  ar.getNext().getLineOffset() < j + lineWidth )
+                lengthOfAnsiRun = ar.getNext().getLineOffset() - (j + k);
+              else
+                lengthOfAnsiRun = lineWidth - k;
+            } else {
+              currentAnsi = defaultAnsi;
+              lengthOfAnsiRun = lineWidth - k;
+            }
+            setAnsiOnGraphics( currentAnsi, g );
+            pixelWidthOfRun = g.getFontMetrics().charsWidth( s.array,
+                                                            s.offset+j+k,
+                                                            lengthOfAnsiRun);
+            drawAnsiBGColor( currentAnsi, g, 
+                                2 + drawnLength, count*lineHeight + lineSpace,
+                                pixelWidthOfRun, lineHeight );
+            g.drawChars( s.array,
+                         s.offset + j + k,
+                         lengthOfAnsiRun,
+                         2 + drawnLength,
+                         count*lineHeight + drop );
+            drawnLength += pixelWidthOfRun;
+            k += lengthOfAnsiRun;
+          }
           count++;
         }
         // only if we finished displaying this line do we count it.
@@ -199,10 +228,69 @@ public class TLBView extends JPanel implements BufferListener, AdjustmentListene
       g.setClip( 0, 0, (int)(dT.getWidth() - dS.getWidth()), (int)dT.getHeight());
       for( i = verticalScrollBar.getVisibleAmount(); i >= 0; i-- ){
         s = myTlb.getLineAsSegment( s, baseLine + i );
-        g.drawChars( s.array, s.offset, s.count, 2, i*lineHeight + drop );
+        ar = myTlb.getAnsiRun( baseLine + i );
+
+        drawnLength = 0;
+        for( j = 0; j < s.count; ){
+          if( ar != null ){
+            currentAnsi = (ar.getAnsi() == null) ? defaultAnsi : ar.getAnsi();
+            if( ar.getNext() != null && ar.getNext().getLineOffset() < s.count )
+              lengthOfAnsiRun = ar.getNext().getLineOffset() - j;
+            else
+              lengthOfAnsiRun = s.count - j;
+          } else {
+            currentAnsi = defaultAnsi;
+            lengthOfAnsiRun = s.count - j;
+          }
+          setAnsiOnGraphics( currentAnsi, g );
+          pixelWidthOfRun = g.getFontMetrics().charsWidth( s.array,
+                                                          s.offset+j,
+                                                          lengthOfAnsiRun);
+          drawAnsiBGColor( currentAnsi, g, 
+                              2 + drawnLength, i*lineHeight + lineSpace,
+                              pixelWidthOfRun, lineHeight );
+          g.drawChars( s.array,
+                       s.offset + j,
+                       lengthOfAnsiRun,
+                       2 + drawnLength,
+                       i*lineHeight + drop );
+          drawnLength += pixelWidthOfRun;
+          if( ar != null ) ar = ar.getNext();
+          j += lengthOfAnsiRun;
+        }
+        //g.drawChars( s.array, s.offset, s.count, 2, i*lineHeight + drop );
       }
       g.setClip( oldClip );
     }
+  }
+  private void setAnsiOnGraphics( AnsiCode ac, Graphics g ){
+    // currently, the only things we support are bright (not dim),
+    // color, and inverse.
+    // italic, underline, and strikethrough shouldn't be too hard
+    // blink might be tough.
+    int fg;
+    if( ac.inverse )
+      fg = (ac.background == AnsiCode.BG_DEFAULT) ? bgColor : ac.background;
+    else
+      fg = (ac.foreground == AnsiCode.FG_DEFAULT) ? fgColor : ac.foreground;
+    g.setColor( AnsiCode.getColor( fg, !ac.inverse && ac.bright ) );
+  }
+  private void drawAnsiBGColor( AnsiCode ac, 
+                                Graphics g, 
+                                int x, int y,
+                                int width, int height ){
+    Color c, save;
+    int bg;
+    if( ac.inverse )
+      bg = (ac.foreground == AnsiCode.FG_DEFAULT) ? fgColor : ac.foreground;
+    else
+      bg = (ac.background == AnsiCode.BG_DEFAULT) ? bgColor : ac.background;
+    // if bg is default, we don't draw it
+    if( ac.background == AnsiCode.BG_DEFAULT && ! ac.inverse ) return;
+    save = g.getColor();
+    g.setColor( AnsiCode.getColor( bg, ac.inverse && ac.bright ) );
+    g.fillRect( x, y, width, height );
+    g.setColor( save );
   }
   // this fixes the scrollbar to match the amount of text to be displayed
   // actually (see note by verticalScrollBar declaration) we keep the
@@ -241,7 +329,7 @@ public class TLBView extends JPanel implements BufferListener, AdjustmentListene
     int appendedChars = be.getAppendLength();
     int removedLines = be.getRemovedLines();
     int appendedLines = be.getAppendedLines();
-    suppressRepaint = true;
+    //suppressRepaint = true;
     int oldValue = verticalScrollBar.getValue();
     int oldExtent = verticalScrollBar.getVisibleAmount();
     int oldMax = verticalScrollBar.getMaximum();
@@ -251,7 +339,7 @@ public class TLBView extends JPanel implements BufferListener, AdjustmentListene
       newValue = oldValue - removedLines;
     } else{
       newValue = 0;
-      suppressRepaint = false;
+      //suppressRepaint = false;
     }
     // default to the extent stays fixed
     int newExtent = oldExtent;
@@ -259,30 +347,27 @@ public class TLBView extends JPanel implements BufferListener, AdjustmentListene
     // 1 if old values showed entire thing assume new does
     if( oldExtent == oldMax ){// only way is to start at 0 and show entire
       newExtent = newMax;
-      suppressRepaint = false;
+      //suppressRepaint = false;
     }
     // 2 if newExtent got shoved past end, "Off with it's head!"
     if( newValue + newExtent > newMax ){
       newExtent = newMax - newValue;
-      suppressRepaint = false;
+      //suppressRepaint = false;
     }
     // if we need to be at the end fix it.
     if( ((alwaysShowNew && appendedChars > 0) || 
               oldValue + oldExtent == oldMax ) &&
           newValue + newExtent < newMax ){
       newValue = newMax - newExtent;
-      suppressRepaint = (appendedChars == 0 && removedLines <= oldValue);
+      //suppressRepaint = (appendedChars == 0 && removedLines <= oldValue);
     }
     verticalScrollBar.setValues( newValue, newExtent, 0, newMax);
     repaint();
   }
   public void adjustmentValueChanged( AdjustmentEvent e ){
     if( e.getAdjustable() == verticalScrollBar ){
-      suppressRepaint = false;
+      //suppressRepaint = false;
       repaint();
     }
   }
-private String vsbValues(){
-return "value: " + verticalScrollBar.getValue() + ", extent: " + verticalScrollBar.getVisibleAmount() + ", min: " + verticalScrollBar.getMinimum() + ", max: " + verticalScrollBar.getMaximum();
-}
 }
