@@ -11,3 +11,5 @@ In 2009, I read about the language in a [slashdot article](https://developers.sl
 It worked, and was pretty good for scripting movement and getting around, but it didn't have a nice gui display.
 
 Anyway, the code here is posted so people can see the quality of code I write.
+
+I've also included some updates. I found some older versions of code archived, and put the oldest snapshots as the root, and then added the newer versions to show some code evolution.
