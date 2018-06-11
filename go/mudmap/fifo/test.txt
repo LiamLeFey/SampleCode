@@ -1,0 +1,37 @@
+newRegion pinnacle
+newRoom pinnacle
+newRoom pinnacle
+newRoom pinnacle
+newRoom pinnacle
+newRoom pinnacle
+setRoomShortDesc 2 A strange sphere
+setRoomShortDesc 3 A busy intersection
+setRoomShortDesc 4 Cancer's shop
+setRoomShortDesc 5 North of the intersection
+setRoomShortDesc 6 South of the intersection
+addExit 2 jump
+addExit 3 jump
+addExit 3 n
+addExit 3 s
+addExit 3 e
+addExit 3 w
+addExit 4 n
+addExit 4 w
+addExit 4 s
+addExit 5 w
+addExit 5 e
+addExit 5 s
+addExit 6 n
+addExit 6 w
+addExit 6 e
+nameRoom 2 login
+nameRoom 3 cot
+setExit 2 jump cot 1
+setExit cot jump 2 1
+setExit 3 n 5 1
+setExit 3 s 6 1
+setExit 3 e 4 1
+setExit 4 w 3 1
+setExit 5 s cot 1
+cleanMap
+

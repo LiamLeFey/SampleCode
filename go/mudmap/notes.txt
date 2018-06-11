@@ -1,0 +1,75 @@
+thoughts about design:
+
+This is the redo of mapper.  splitting descriptions from their rooms, and
+equalizing all states, wether they be a room or a state in a special exit,
+which removes special exits, really.
+
+So conceptually, a room is just location state.  it keeps track of common
+things, like its description(s) But it's small, to allow a smallish memory
+footprint while running pathing algorithms, and loading regions for display
+of maps
+
+
+Room: central struct
+ + Region id
+ + short desc id
+ + long desc id
+ + anomalous (indicator of alternate descs, exit lists, notes, etc.)
+ + anomaly ids
+ + exit map[string]int64 command to destination room
+   + exit not in obvious list prepended with '.' (like hidden unix filename)
+   + exit we've seen but not yet traversed (unknown dest 0x7FFFFFFFFFFFFFFF)
+   + trigger has negative destination id (dest room ID * -1)
+   + string for trigger is ".<cost>.<trigger regexp>"
+PString: Persistable String
+ + an id
+ + a String
+Region: a collection of rooms, with limited connections to other regions
+ + designated exit/entrance rooms
+// fix storage from lengths to paths...
+ + paths from entrances to exits (or lengths at least)
+// add convenient method to redo the entrance->exit paths
+ + make sure that the logic for adding region exit entrance info is
+   in the external methods of changing room exit destinations.
+Path:
+ + generalized method for getting paths (working in concert with Region)
+RoomFinder:
+ + Storable, but not persistable.
+ + Index by (Region, ShortDescriptionID, LongDescriptionID(s), ExitList(s))
+ + Index -> List of RoomIDs
+Anomaly:
+ - Multiple Types
+   + Tags
+   - Notes
+   - mobile exit.  Think the Tardis - an exit that wanders around (chaos)
+ Tags  multiple  to many Room
+ Notes many to one  Room
+
+Tag: - Notes that refer to multiple rooms. An anomaly.
+ + Title - the Anomaly name
+ + Description
+ + List of Rooms
+
+Note: - A note attached to a room. An anomaly.
+ - String (direct. don't PString it, since it's a strong candidate for
+           changing often and orphaning PStrings.)
+ - Room
+
+Next steps:
+
+ - implement fifo interface
+ - prelim testing
+ - write triggers & scripts, test with guests
+ 
+ *** Usable state.  start testing.
+ - finish Notes -- similar to name?
+ - write wandering exit logic/whatever.  regexps & rooms it wanders to.
+   - that one is an anomaly the path will have to be aware of...
+ 
+ *** would be nice
+ - merge regionx with regiony
+
+Current project:
+ - prelim testing
+
+

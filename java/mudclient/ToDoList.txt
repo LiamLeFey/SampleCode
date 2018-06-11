@@ -1,0 +1,51 @@
+
+get simple connection to work
+write /addworld
+
+MUD!!
+
+write /def
+
+simple compound commands
+get triggers working
+get multiline triggers working
+
+hook up the mapper
+
+add world discernment (trigger A works on master world, B on slave(s))
+
+add a brute force search?  maybe to PersistentStore? for strings...
+this would be usefull if I ever need to search on a note...(which doesn't have
+an ID.)
+
+add hooks in Room for wandering exits - connected to Region?
+  - they are pretty obviously (usually) region exits... 
+
+aliases
+
+logic and math
+
+hooks
+
+split console screen
+
+At this point you have more than you had with tf.
+
+applet/ajax?
+
+Done!!
+
+incorporate areas & display nicities.
+
+how hard would it be to make it html compat, with mousover stuff?
+so what is AJAX anyway?
+
+make SpecialExit more robust, add intelligence to continue the path
+  even if we don't know where we will be
+  might have to work a lot with path, make it branching, give the
+  elements some state, etc etc
+
+a State system seems like a good idea for map.  either attached to a room or
+an exit...
+
+Icing!!
